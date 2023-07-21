@@ -4,7 +4,7 @@ import tempfile
 import xml.etree.cElementTree as ET
 
 from flask import current_app, send_file, render_template, request, Response
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from werkzeug.datastructures import FileStorage
 from datetime import datetime, timedelta
 
@@ -72,8 +72,10 @@ def authenticate(username, password):
     if username and password:
         if username == 'admin' and password == 'password':
             return True
-        else:
-            return False
+
+        if username == 'user' and password == 'password':
+            return True
+
     return False
 
 
@@ -85,19 +87,35 @@ upload_publickey_parser.add_argument('file', location='files', type=FileStorage,
                                      help='DYNAMO Public Key -public.pem file')
 
 
-@api.route('/upload/publickey/<self_id>')
+@api.route('/upload/publickey/<string:self_id>')
 @api.expect(upload_publickey_parser)
 class PublicKeyUpload(Resource):
     @auth.login_required
     def post(self, self_id):
+
         # This is FileStorage instance
         uploaded_file = request.files['file']
 
-        # Check if the mime is plain/text
-        if uploaded_file.mimetype == 'application/x-x509-ca-cert':
+        # Push the application context
+        with current_app.app_context():
 
+            # Get the public key root
+            public_key_root = current_app.config["PUBLIC_KEY_ROOT"]
+
+            # Check if the filename is relative
+            #if not os.path.isabs(public_key_root):
+            #    # Move one directory level up
+            #    public_key_root = ".." + os.sep + public_key_root
+
+            # Check if self_id starts with "vessels."
+            if not self_id.startswith("vessels."):
+
+                # Add the vessels prefix
+                self_id = "vessels." + self_id
+
+            log.debug(os.getcwd())
             # Compose the destination file path name
-            file_path = os.path.join(current_app.config.get('PUBLIC_KEY_ROOT'), str(self_id) + "-public.pem")
+            file_path = os.path.join(public_key_root, self_id + "-public.pem")
 
             # Save the uploaded file as the file path
             uploaded_file.save(file_path)
@@ -106,9 +124,6 @@ class PublicKeyUpload(Resource):
             log.debug("Saved public key as: " + file_path)
 
             return {"result": "ok", "user": auth.current_user()}, 200
-
-        else:
-            return {"result": "fail", "error": "File mimetype must be application/x-x509-ca-cert"}, 422
 
 
 # Create an api parser
@@ -184,12 +199,11 @@ class LastPosition(Resource):
         conn = engine.connect()
 
         try:
-            result = conn.execute(
-                "SELECT ctx.context, pos.timestamp, ctx.value as info, pos.position FROM public.context ctx, "
-                "(SELECT context, timestamp, value as position FROM public.navigation_position np1 WHERE timestamp = "
-                "(SELECT MAX(np2.timestamp) FROM public.navigation_position np2 WHERE np1.context = np2.context) "
-                "ORDER BY context) pos WHERE ctx.context = pos.context LIMIT 1;"
-            )
+            sql_string = "SELECT ctx.context, pos.timestamp, ctx.value as info, pos.position FROM public.context ctx, "\
+                         "(SELECT context, timestamp, value as position FROM public.navigation_position np1 WHERE timestamp = "\
+                         "(SELECT MAX(np2.timestamp) FROM public.navigation_position np2 WHERE np1.context = np2.context) "\
+                         "ORDER BY context) pos WHERE ctx.context = pos.context LIMIT 1;"
+            result = conn.execute(text(sql_string))
             for row in result:
                 positions.append({
                     "id": row[0].split(":")[-1],
@@ -199,14 +213,20 @@ class LastPosition(Resource):
                 })
             conn.close()
         except Exception as exception:
+            log.error("SQL: " + str(exception))
             conn.close()
 
         return positions
 
 
-@api.route('/gpx/<self_id>')
+@api.route('/gpx/<string:self_id>')
 class GPX(Resource):
     def get(self, self_id):
+        # Check if self_id starts with "vessels."
+        if not self_id.startswith("vessels."):
+            # Add the vessels prefix
+            self_id = "vessels." + self_id
+
         query = "SELECT * FROM public.navigation_position WHERE context='" + self_id + "' "
 
         connection_string = current_app.config["CONNECTION_STRING"]
@@ -250,7 +270,7 @@ class GPX(Resource):
         query += "ORDER BY timestamp ASC;"
 
         try:
-            result = conn.execute(query)
+            result = conn.execute(text(query))
             for row in result:
                 trkpt = ET.SubElement(trkseg, "trkpt", attrib={"lat": str(row[5]), "lon": str(row[4])})
                 ET.SubElement(trkpt, "time").text = str(row[1])
