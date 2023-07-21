@@ -13,7 +13,6 @@ from flask import request, jsonify
 from flask_restx import Api, Resource, fields
 from flask_httpauth import HTTPBasicAuth
 
-
 # Create the logger
 log = logging.getLogger('routes')
 
@@ -49,9 +48,23 @@ log.debug("Routes")
 @api.route('/publickey')
 class PublicKey(Resource):
     def get(self):
+
+        # Push the application context
         with current_app.app_context():
+
+            # Log a debug message
             log.debug("PUBLIC_KEY_FILENAME:" + current_app.config["PUBLIC_KEY_FILENAME"])
-            return send_file("../"+current_app.config["PUBLIC_KEY_FILENAME"], as_attachment=True)
+
+            # Get the public key filename
+            public_key_filename = current_app.config["PUBLIC_KEY_FILENAME"]
+
+            # Check if the filename is relative
+            if not os.path.isabs(public_key_filename):
+
+                # Move one directory level up
+                public_key_filename = ".." + os.sep + public_key_filename
+
+            return send_file(public_key_filename, as_attachment=True)
 
 
 @auth.verify_password
