@@ -2,7 +2,7 @@ import logging
 from app import create_app
 
 # Create the logger
-log = logging.getLogger('app')
+log = logging.getLogger('run')
 
 # Set the default logger level as debug
 log.setLevel(logging.DEBUG)
