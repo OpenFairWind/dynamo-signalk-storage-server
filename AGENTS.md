@@ -11,6 +11,9 @@
 - Treat `config.json`, private keys, registered vessel keys, media parcels,
   telemetry, database credentials, and Redis credentials as sensitive. Do not
   commit, print, fixture, or log their real contents.
+- Treat SMTP credentials and OAuth client secrets as sensitive settings. Never
+  return them in API responses, prefill them in a rendered form, or include
+  them in tests and logs.
 - Keep paths safe: data derived from HTTP input must not be able to escape its
   configured directory. Preserve the accepted Signal K context identifier
   format when changing upload handling.

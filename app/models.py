@@ -1,6 +1,7 @@
 from enum import Enum
 from flask_login import UserMixin
-from sqlalchemy import Boolean, Enum as SqlEnum, Integer, String, Table, Column, ForeignKey
+from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, Integer, String, Table, Column, ForeignKey
+from datetime import datetime, timezone
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -31,3 +32,9 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+class RegistrationInvite(Base):
+    __tablename__ = "registration_invites"
+    token: Mapped[str] = mapped_column(String(128), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

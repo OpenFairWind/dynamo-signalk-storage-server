@@ -58,6 +58,12 @@ default; only an administrator can open it or provision users through the
 authenticated API. The roles are `admin` and `user`; only administrators may
 create access groups or change registration policy.
 
+Self-registration uses an opaque random, single-use token stored in the
+database and valid for one hour. SMTP delivery must be configured by an
+administrator before exposing registration. OAuth client secrets are stored as
+application settings and must be protected as deployment secrets; the settings
+page intentionally never pre-fills the saved secret.
+
 The application enables CORS and has no application-level authentication on
 `/upload` or `/publickey`. Encrypting the parcel does **not** authenticate the
 HTTP endpoint, conceal request metadata, prevent storage exhaustion, or stop a

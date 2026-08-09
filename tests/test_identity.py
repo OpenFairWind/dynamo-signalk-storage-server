@@ -17,6 +17,11 @@ class IdentityTests(unittest.TestCase):
             admin=self.app.extensions["db"].query(User).filter_by(username="admin").one(); self.assertEqual(admin.role, Role.ADMIN); self.assertTrue(admin.check_password("password"))
         self.assertEqual(self.client.get("/register").status_code, 403)
     def test_admin_can_open_registration_and_create_group(self):
-        self.login(); self.client.post("/admin/registration", data={"open":"on"}); self.assertEqual(self.client.post("/register", data={"username":"sailor","password":"long-enough-password"}).status_code, 302)
+        self.login(); self.client.post("/admin/registration", data={"open":"on"}); self.assertEqual(self.client.post("/register", data={"email":"sailor@example.test"}).status_code, 200)
+        link=self.app.extensions["registration_links"]["sailor@example.test"]
+        self.assertEqual(self.client.post(link, data={"username":"sailor","password":"long-enough-password"}).status_code, 302)
         self.login(); response=self.client.post("/admin/groups", data={"name":"research"}); self.assertEqual(response.status_code, 200)
         with self.app.app_context(): self.assertIsNotNone(self.app.extensions["db"].query(Group).filter_by(name="research").first())
+    def test_admin_can_save_smtp_and_provider_settings(self):
+        self.login(); response=self.client.post("/admin/settings", data={"smtp_host":"smtp.example.test","smtp_port":"587","smtp_sender":"noreply@example.test","oauth_providers":"google,github","oauth_client_id":"id","oauth_client_secret":"secret"})
+        self.assertEqual(response.status_code, 200)

@@ -71,7 +71,9 @@ The application seeds an `admin` account with password `password` for first
 startup only. Change or replace it before exposing the service. Administrators
 can sign in at `/login`, create groups at `/admin/groups`, and decide whether
 public self-registration at `/register` is open. Registration is closed by
-default. The authenticated `POST /api/users` endpoint remains administrator
+default. Registration uses a one-time, one-hour email link before a user can
+choose a username and password. Administrators configure SMTP and OAuth
+identity-provider properties at `/admin/settings`. The authenticated `POST /api/users` endpoint remains administrator
 only, allowing controlled provisioning when public registration is closed.
 
 ## Verification

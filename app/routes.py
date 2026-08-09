@@ -1,10 +1,14 @@
 import os
 import re
 import tempfile
+import smtplib
+import secrets
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required, login_user, logout_user
-from .models import Group, Role, Setting, User
+from .models import Group, RegistrationInvite, Role, Setting, User
 from .dao import Dao
 
 web = Blueprint("web", __name__)
@@ -42,11 +46,41 @@ def logout(): logout_user(); return redirect(url_for("web.index"))
 def register():
     if not registration_open(): abort(403)
     if request.method == "POST":
-        username, password = request.form.get("username", "").strip(), request.form.get("password", "")
-        if not username or len(password) < 12 or dao().user(username): flash("Use a unique username and a password of at least 12 characters.", "danger")
+        email=request.form.get("email", "").strip().lower()
+        if "@" not in email: flash("Enter a valid email address.", "danger")
         else:
-            user=dao().create_user(username, password); login_user(user); return redirect(url_for("web.index"))
-    return render_template("register.html")
+            token=secrets.token_urlsafe(32); invite=RegistrationInvite(token=token, email=email, expires_at=datetime.now(timezone.utc)+timedelta(hours=1)); dao().save_invite(invite)
+            link=url_for("web.complete_registration", token=token, _external=True)
+            if not current_app.config.get("MAIL_SUPPRESS_SEND"):
+                host=dao().setting("smtp_host").value
+                if host:
+                    message=EmailMessage(); message["To"]=email; message["From"]=dao().setting("smtp_sender", "noreply@localhost").value; message["Subject"]="Complete DYNAMO registration"; message.set_content(f"Complete your registration: {link}")
+                    with smtplib.SMTP(host, int(dao().setting("smtp_port", "25").value)) as smtp: smtp.send_message(message)
+            current_app.extensions.setdefault("registration_links", {})[email]=link
+            flash("If SMTP is configured, a registration link has been sent.", "success")
+    return render_template("register.html", step=1)
+
+@web.route("/register/complete/<token>", methods=["GET", "POST"])
+def complete_registration(token):
+    invite=dao().invite(token)
+    if not invite or invite.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc): abort(400)
+    if request.method == "POST":
+        username,password=request.form.get("username", "").strip(),request.form.get("password", "")
+        if not username or len(password)<12 or dao().user(username): flash("Use a unique username and a password of at least 12 characters.", "danger")
+        else: user=dao().create_user(username,password); dao().consume_invite(invite); login_user(user); return redirect(url_for("web.index"))
+    return render_template("register.html", step=2, token=token, email=invite.email)
+
+@web.route("/admin/settings", methods=["GET", "POST"])
+@admin_required
+def settings():
+    keys=("smtp_host","smtp_port","smtp_sender","oauth_providers","oauth_client_id","oauth_client_secret")
+    if request.method == "POST":
+        for key in keys:
+            value=request.form.get(key, "").strip()
+            if key != "oauth_client_secret" or value: dao().set_setting(key, value)
+        flash("Settings saved.", "success")
+    values={key:dao().setting(key).value for key in keys}; values["oauth_client_secret"]=""
+    return render_template("settings.html", settings=values)
 
 @web.route("/admin/groups", methods=["GET", "POST"])
 @admin_required

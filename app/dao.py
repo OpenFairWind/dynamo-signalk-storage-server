@@ -1,5 +1,5 @@
 """Database-agnostic SQLAlchemy data access objects."""
-from .models import Group, Setting, User
+from .models import Group, RegistrationInvite, Setting, User
 
 class Dao:
     def __init__(self, session): self.session = session
@@ -13,3 +13,9 @@ class Dao:
     def set_setting(self, key, value): self.setting(key).value=value; self.session.commit()
     def groups(self): return self.session.query(Group).order_by(Group.name).all()
     def create_group(self, name): group=Group(name=name); self.session.add(group); self.session.commit(); return group
+    def invite(self, token): return self.session.get(RegistrationInvite, token)
+    def save_invite(self, invite):
+        existing=self.session.query(RegistrationInvite).filter_by(email=invite.email).first()
+        if existing: self.session.delete(existing); self.session.flush()
+        self.session.add(invite); self.session.commit()
+    def consume_invite(self, invite): self.session.delete(invite); self.session.commit()
