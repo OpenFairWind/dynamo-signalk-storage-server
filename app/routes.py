@@ -9,6 +9,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required, login_user, logout_user
+from sqlalchemy import text
 from .models import Group, RegistrationInvite, Role, Setting, User
 from .dao import Dao
 from .models import Vessel
@@ -82,6 +83,35 @@ def delete_vessel(vessel_id):
     vessel=dao().vessel(vessel_id)
     if not vessel or vessel.owner_id != current_user.id: abort(403)
     dao().delete_vessel(vessel); return redirect(url_for("web.vessels"))
+
+def position_rows(contexts, start, end):
+    rows=[]
+    for context in contexts:
+        try:
+            rows.extend(database().execute(text("SELECT timestamp, lat, lon FROM navigation_position WHERE context=:context AND timestamp BETWEEN :start AND :end ORDER BY timestamp"), {"context":context,"start":start,"end":end}).mappings().all())
+        except Exception: pass
+    return [{"timestamp":str(row["timestamp"]),"lat":row["lat"],"lon":row["lon"]} for row in rows if row["lat"] is not None and row["lon"] is not None]
+
+@web.get("/dashboard")
+def dashboard(): return render_template("dashboard.html", authenticated=current_user.is_authenticated)
+
+@web.get("/api/dashboard/heatmap")
+def heatmap():
+    try:
+        rows=database().execute(text("SELECT lat, lon, COUNT(*) AS weight FROM navigation_position GROUP BY lat, lon")).mappings().all()
+        return jsonify([{"lat":row["lat"],"lon":row["lon"],"weight":row["weight"]} for row in rows if row["lat"] is not None and row["lon"] is not None])
+    except Exception: return jsonify([])
+
+@web.get("/api/dashboard/tracks")
+@login_required
+def dashboard_tracks():
+    vessels=database().query(Vessel).all() if current_user.is_admin else dao().vessels(current_user.id)
+    start=request.args.get("start", "1970-01-01T00:00:00"); end=request.args.get("end", "9999-12-31T23:59:59")
+    result=[]
+    for vessel in vessels:
+        contexts=(vessel.signalk_uuid, f"vessels.{vessel.signalk_uuid}")
+        result.append({"vessel_id":vessel.id,"name":vessel.signalk_uuid,"positions":position_rows(contexts,start,end)})
+    return jsonify(result)
 
 @web.route("/register", methods=["GET", "POST"])
 def register():

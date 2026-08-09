@@ -86,6 +86,13 @@ UUID and PEM public key shown by the companion logger plugin, then download
 this service's public key from the linked endpoint and paste it into the
 plugin's server-key configuration field.
 
+## Geographic dashboard
+
+`/dashboard` uses OpenLayers with temporal start/end controls. Authenticated
+users receive tracks only for their registered vessels; administrators receive
+all registered-vessel tracks. Anonymous visitors receive only an aggregate
+position-density heatmap with no vessel identities or tracks.
+
 ## Verification
 
 After installing the pinned dependencies in an isolated environment, run:
