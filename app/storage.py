@@ -59,6 +59,16 @@ def store_updatelist(update_list, options):
     # Retrieve the metadata
     metadata = MetaData()
 
+    # Keep the source registry stable across batches.  The previous code only
+    # declared this table for a subset of updates and then queried a string
+    # literal instead of the table, so source inserts could never work.
+    sources_table = Table("sources", metadata,
+                          Column('context', Text, nullable=False, primary_key=True),
+                          Column('label', Text, nullable=False, primary_key=True),
+                          Column('type', Text, nullable=False),
+                          Column('value', JSON))
+    metadata.create_all(engine)
+
     # For each update item in the update list
     for update_item in update_list:
 
@@ -102,13 +112,18 @@ def store_updatelist(update_list, options):
                 continue
 
             # Get the timestamp
-            timestamp = datetime.datetime.strptime(update["timestamp"], '%Y-%m-%dT%H:%M:%S.%fZ')
+            try:
+                timestamp = datetime.datetime.fromisoformat(
+                    update["timestamp"].replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                log.error("Invalid timestamp: %r", update["timestamp"])
+                continue
 
             # Set the source to  none
             source = None
 
             # Set the source reference to none
-            source_ref = None
+            source_ref = ""
 
             # Check if the update has a source reference
             if "$source" in update:
@@ -116,7 +131,7 @@ def store_updatelist(update_list, options):
                 source_ref = update["$source"]
 
             # Check if the source full description is present
-            if source_ref is None and "source" in update:
+            if not source_ref and "source" in update:
 
                 # Get the source full description
                 source = update["source"]
@@ -129,43 +144,22 @@ def store_updatelist(update_list, options):
             # Log da debug message
             log.debug(str(timestamp) + " source_ref: " + source_ref)
 
-            # Set the sources table reference to none
-            sources_table = None
-
-            # Check if the table "sources" must be created
-            if source is not None and "sources" not in metadata.tables:
-
-                # Define the sources table
-                sources_table = Table("sources", metadata,
-                                      Column('context', Text, nullable=False, primary_key=True),
-                                      Column('label', Text, nullable=False, primary_key=True),
-                                      Column('type', Text, nullable=False),
-                                      Column('value', JSON)
-                                      )
-
-                # Create the sources table
-                metadata.create_all(engine)
-
-                # Log a debug message
-                log.debug("Created table: sources")
-
-            # Check if the table "sources" exists
-            if "sources" in metadata.tables:
-
-                # Search for the source_ref in the table
-
-                sql_string = select("sources").where("label" == source_ref)
+            if source is not None and source_ref:
+                # Search by the same composite key used by the table.
+                sql_string = select(sources_table.c.label).where(
+                    sources_table.c.context == context,
+                    sources_table.c.label == source_ref)
 
                 try:
                     with engine.connect() as conn:
                         result = conn.execute(sql_string)
 
                         # Check if the source label is not present
-                        if result.rowcount == 0:
+                        if result.first() is None:
                             params = {
                                 "context": context,
                                 "label": source_ref,
-                                "type": source["type"],
+                                "type": source.get("type", "unknown"),
                                 "value": source
                             }
 
@@ -179,7 +173,7 @@ def store_updatelist(update_list, options):
                             conn.commit()
 
                             # Log a debug message
-                            log.debug("Added " + source_ref + "to the sources table")
+                            log.debug("Added " + source_ref + " to the sources table")
 
                 except Exception as exception:
                     log.error("SQL:" + str(exception))
@@ -218,6 +212,9 @@ def store_updatelist(update_list, options):
                         table_name = path.replace(".", "_")
 
                     # Get the value
+                    if "value" not in value:
+                        log.error("Value missing for path: %s", path)
+                        continue
                     value_data = value["value"]
 
                     # Check if the table must be created
@@ -291,8 +288,9 @@ def store_updatelist(update_list, options):
                             "value": value_data,
                             "lon": value_data["longitude"],
                             "lat": value_data["latitude"],
+                            # WKT point order is longitude then latitude.
                             "point": "POINT (" +
-                                     str(value_data["latitude"]) + " " + str(value_data["longitude"]) +
+                                     str(value_data["longitude"]) + " " + str(value_data["latitude"]) +
                                      ")"
                         }
                     else:

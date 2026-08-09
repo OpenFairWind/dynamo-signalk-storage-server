@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import re
 import xml.etree.cElementTree as ET
 
 from flask import current_app, send_file, render_template, request, Response
@@ -43,23 +44,9 @@ log.debug("Routes")
 @api.route('/publickey')
 class PublicKey(Resource):
     def get(self):
-
-        # Push the application context
-        with current_app.app_context():
-
-            # Log a debug message
-            log.debug("PUBLIC_KEY_FILENAME:" + current_app.config["PUBLIC_KEY_FILENAME"])
-
-            # Get the public key filename
-            public_key_filename = current_app.config["PUBLIC_KEY_FILENAME"]
-
-            # Check if the filename is relative
-            if not os.path.isabs(public_key_filename):
-
-                # Move one directory level up
-                public_key_filename = ".." + os.sep + public_key_filename
-
-            return send_file(public_key_filename, as_attachment=True)
+        public_key_filename = current_app.config["PUBLIC_KEY_FILENAME"]
+        log.debug("PUBLIC_KEY_FILENAME:" + public_key_filename)
+        return send_file(public_key_filename, as_attachment=True)
 
 
 # Create an api parser
@@ -80,7 +67,14 @@ class ParcelUpload(Resource):
         from app.tasks import process_file_task
 
         # This is FileStorage instance
-        uploaded_file = request.files['file']
+        uploaded_file = request.files.get('file')
+        if uploaded_file is None:
+            return {'result': 'fail', 'error': 'Missing file field'}, 400
+
+        # Context identifiers are used as directory names.  Keep the accepted
+        # Signal K form while rejecting path traversal and control characters.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", self_id):
+            return {'result': 'fail', 'error': 'Invalid vessel identifier'}, 400
 
         # Check if the myme is application/octet-stream
         if uploaded_file.mimetype == 'application/octet-stream':
@@ -93,32 +87,13 @@ class ParcelUpload(Resource):
                 # Make the directory if needed
                 os.makedirs(destination)
 
-            # Set the file path
-            file_path = ""
-
-            # Set the file name
-            temp_name = ""
-
-            # Until the random temporary file name is not unique...
-            done = False
-            while not done:
-
-                # Generate a temporary file name
-                temp_name = next(tempfile._get_candidate_names())
-
-                # Create a file name
-                file_path = '%s%s%s' % (destination, temp_name, '.log.gz.enc')
-
-                # Check if the file already exists
-                if os.path.isfile(file_path) is False:
-                    # If the file doesn't exist, exit the cycle
-                    done = True
-
-            # Save the uploaded file as the file path
+            descriptor, file_path = tempfile.mkstemp(suffix='.log.gz.enc', dir=destination)
+            os.close(descriptor)
+            temp_name = os.path.basename(file_path)
             uploaded_file.save(file_path)
 
             # Processing the file is potentially time-consuming, enqueue the process
-            process_file_task.delay(self_id, temp_name + '.log.gz.enc')
+            process_file_task.delay(self_id, temp_name)
 
             return {'result': 'ok'}, 200
         else:

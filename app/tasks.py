@@ -76,15 +76,16 @@ def process_file_task(self: Task, directory: str, file_item: str):
                 shutil.rmtree(scratch_dir)
                 log.debug("Removed scratch directory: " + scratch_dir)
 
+                os.makedirs(os.path.join(trash_root, directory), exist_ok=True)
+                shutil.move(src_path, os.path.join(trash_root, directory, file_item))
+                log.info("Processed and archived: " + src_path)
+
             except Exception as exception:
-                log.error(exception)
-
-            try:
-                os.makedirs(trash_root + "/" + directory)
-
-                os.rename(src_path, trash_root + "/" + directory + "/" + file_item)
-            except FileExistsError as e:
-                pass
+                # Keep failed parcels in MEDIA_ROOT so Celery/start-up retry can
+                # process them once the key, database, or malformed input issue is fixed.
+                log.exception("Unable to process %s: %s", src_path, exception)
+                if os.path.isdir(scratch_dir):
+                    shutil.rmtree(scratch_dir, ignore_errors=True)
 
         else:
             log.debug("Public key file missing: " + public_key_filename)

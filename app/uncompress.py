@@ -27,26 +27,31 @@ def verify_sign(public_key_loc, signature, data):
     return: Boolean. True if the signature is valid; False otherwise.
     '''
 
-    pub_key = open(public_key_loc, "r").read()
+    with open(public_key_loc, "r", encoding="utf-8") as public_key_file:
+        pub_key = public_key_file.read()
     rsakey = RSA.importKey(pub_key)
     signer = PKCS1_v1_5.new(rsakey)
     digest = SHA256.new()
-    digest.update(data.encode("utf-8"))
+    digest.update(data)
     if signer.verify(digest, b64decode(signature)):
         return True
     return False
 
 
 def unpad(padded):
+    if not padded:
+        raise ValueError("Encrypted payload is empty")
     pad = padded[-1]
+    if pad < 1 or pad > AES.block_size or padded[-pad:] != bytes([pad]) * pad:
+        raise ValueError("Invalid AES padding")
     return padded[:-pad]
 
 
 def get_encoded_encrypted_symmetric_key(src_path, enc_path):
-    encoded_encrypted_symmetric_key = None
-
     with open(src_path, "rb") as f_in:
-        encoded_encrypted_symmetric_key = f_in.readline().decode('utf-8')
+        encoded_encrypted_symmetric_key = f_in.readline().decode("ascii").strip()
+        if not encoded_encrypted_symmetric_key:
+            raise ValueError("Parcel is missing its encrypted-key header")
         with open(enc_path, 'wb') as f_out:
             data = f_in.read(10000)
             while data:
@@ -57,7 +62,8 @@ def get_encoded_encrypted_symmetric_key(src_path, enc_path):
 
 
 def get_symmetric_key(private_key_filename, encoded_encrypted_symmetric_key):
-    rsa_key = RSA.importKey(open(private_key_filename, "rb").read())
+    with open(private_key_filename, "rb") as private_key_file:
+        rsa_key = RSA.importKey(private_key_file.read())
     rsa_key = PKCS1_OAEP.new(rsa_key)
     decoded_encrypted_symmetric_key = b64decode(encoded_encrypted_symmetric_key)
     symmetric_key = rsa_key.decrypt(decoded_encrypted_symmetric_key)
@@ -65,45 +71,49 @@ def get_symmetric_key(private_key_filename, encoded_encrypted_symmetric_key):
 
 
 def uncrypt_update_list(public_key_filename, symmetric_key, enc_path):
-    update_list = []
+    """Decrypt and verify a DYNAMO parcel.
+
+    Version 2 clients append the CBC IV after the encrypted payload.  Early
+    server versions incorrectly read it from the start; accepting that layout
+    as a fallback keeps already-uploaded legacy parcels recoverable.
+    """
     with open(enc_path, mode='rb') as f_in:
-        enc = bytearray(f_in.read())
+        encrypted_payload = f_in.read()
 
-        iv = enc[:16]
-        # print ("len(iv):"+str(len(iv)))
-        # print ','.join('{:02x}'.format(x) for x in iv)
+    if len(encrypted_payload) < AES.block_size * 2:
+        raise ValueError("Parcel payload is too short")
 
-        m = sha256()
-        m.update(symmetric_key)
-        key = m.digest()
-        aes = AES.new(key, AES.MODE_CBC, iv)
-        result = unpad(aes.decrypt(enc[16:]))
+    key = sha256(symmetric_key).digest()
 
-        # bbb=bytearray(result)
-        # print ','.join('{:02x}'.format(x) for x in bbb)
+    def decrypt(iv, ciphertext):
+        if len(ciphertext) == 0 or len(ciphertext) % AES.block_size:
+            raise ValueError("Invalid AES ciphertext length")
+        compressed = unpad(AES.new(key, AES.MODE_CBC, iv).decrypt(ciphertext))
+        with gzip.GzipFile(fileobj=io.BytesIO(compressed), mode="rb") as gzip_file:
+            return gzip_file.read()
 
-        in_ = io.BytesIO()
-        in_.write(result)
-        in_.seek(0)
-        with gzip.GzipFile(fileobj=in_, mode='rb') as fo:
-            gunzipped_bytes_obj = fo.read()
+    # The plugin's documented/current layout is ciphertext followed by IV.
+    # Fall back to the pre-2.0 server interpretation for parcels already on disk.
+    try:
+        plaintext = decrypt(encrypted_payload[-AES.block_size:], encrypted_payload[:-AES.block_size])
+    except Exception as current_layout_error:
+        try:
+            plaintext = decrypt(encrypted_payload[:AES.block_size], encrypted_payload[AES.block_size:])
+        except Exception:
+            raise current_layout_error
 
-        result = gunzipped_bytes_obj.decode()
+    header, separator, log_file = plaintext.partition(b"\n")
+    if not separator:
+        raise ValueError("Parcel is missing its signature header")
+    meta_data = json.loads(header.decode("utf-8"))
+    encrypted_signature = meta_data.get("signature")
+    if not encrypted_signature or not verify_sign(public_key_filename, encrypted_signature, log_file):
+        raise ValueError("Invalid signature")
 
-        lines = result.splitlines()
-        meta_data = json.loads(lines[0])
-        encrypted_signature = meta_data["signature"]
-        # print ("Encrypted Signature:" + encrypted_signature)
-
-        log_file = ''.join(line + "\n" for line in lines[1:])
-
-        if encrypted_signature is not None:
-            if verify_sign(public_key_filename, encrypted_signature, log_file):
-                for line in lines[1:]:
-                    update_list.append(json.loads(line))
-            else:
-                raise ValueError('Invalid signature')
-
+    update_list = []
+    for line in log_file.splitlines():
+        if line:
+            update_list.append(json.loads(line.decode("utf-8")))
     return update_list
 
 
