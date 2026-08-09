@@ -51,6 +51,13 @@ an auditable system outside this repository.
 
 ## Transport, access control, and network exposure
 
+The application seeds a bootstrap administrator named `admin` with password
+`password`. This is intended only to make a first deployment operable. Replace
+the account password before external exposure. Public registration is closed by
+default; only an administrator can open it or provision users through the
+authenticated API. The roles are `admin` and `user`; only administrators may
+create access groups or change registration policy.
+
 The application enables CORS and has no application-level authentication on
 `/upload` or `/publickey`. Encrypting the parcel does **not** authenticate the
 HTTP endpoint, conceal request metadata, prevent storage exhaustion, or stop a

@@ -18,6 +18,8 @@ Celery worker, and persists the resulting deltas in PostgreSQL/PostGIS.
   positions.
 - A Compose deployment with independently restartable web, worker, PostGIS,
   and Redis services plus persistent state volumes.
+- A responsive Bootstrap progressive web application shell with an OpenLayers
+  map, install metadata, and offline shell caching.
 
 ## Documentation
 
@@ -63,6 +65,15 @@ For host-based Python development, use `docker-compose.yml.development` to run
 only PostGIS and Redis, then follow the local workflow in
 [getting started](docs/getting_started.md).
 
+## Identity and registration
+
+The application seeds an `admin` account with password `password` for first
+startup only. Change or replace it before exposing the service. Administrators
+can sign in at `/login`, create groups at `/admin/groups`, and decide whether
+public self-registration at `/register` is open. Registration is closed by
+default. The authenticated `POST /api/users` endpoint remains administrator
+only, allowing controlled provisioning when public registration is closed.
+
 ## Verification
 
 After installing the pinned dependencies in an isolated environment, run:
@@ -73,6 +84,11 @@ python -m compileall -q app tests
 git diff --check
 docker compose config
 ```
+
+The test suite uses temporary SQLite databases and does not require Redis,
+PostgreSQL, or external network services. It covers receiver cryptography,
+upload validation and queue hand-off, role/registration policy, SQLAlchemy DAO
+behaviour, and PWA assets.
 
 ## Research context
 

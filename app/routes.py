@@ -1,100 +1,88 @@
-import logging
 import os
-import tempfile
 import re
-import xml.etree.cElementTree as ET
+import tempfile
+from pathlib import Path
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask_login import current_user, login_required, login_user, logout_user
+from .models import Group, Role, Setting, User
+from .dao import Dao
 
-from flask import current_app, send_file, render_template, request, Response
-from sqlalchemy import create_engine, text
-from werkzeug.datastructures import FileStorage
-from datetime import datetime, timedelta
+web = Blueprint("web", __name__)
+IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
 
-from celery.result import AsyncResult
-from flask import request, jsonify
-from flask_restx import Api, Resource, fields
-from flask_httpauth import HTTPBasicAuth
+@web.get("/")
+def index(): return render_template("index.html")
 
-# Create the logger
-log = logging.getLogger('routes')
+def database(): return current_app.extensions["db"]
+def dao(): return Dao(database())
+def registration_open():
+    return dao().setting("registration_open", "false").value == "true"
+def admin_required(fn):
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not current_user.is_admin: abort(403)
+        return fn(*args, **kwargs)
+    wrapped.__name__ = fn.__name__
+    return wrapped
 
-# Set the default logger level as debug
-log.setLevel(logging.DEBUG)
+@web.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        user = dao().user(request.form.get("username", ""))
+        if user and user.check_password(request.form.get("password", "")):
+            login_user(user); return redirect(url_for("web.index"))
+        flash("Invalid username or password.", "danger")
+    return render_template("login.html")
 
-# Create the logger formatter
-fmt = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+@web.post("/logout")
+@login_required
+def logout(): logout_user(); return redirect(url_for("web.index"))
 
-# Get the handler
-h = logging.StreamHandler()
-
-# Set the formatter
-h.setFormatter(fmt)
-
-# Add the handler to the logger
-log.addHandler(h)
-
-# Create the api object using restx
-api = Api(current_app)
-
-# Get the HTTP Basic Authentication object
-auth = HTTPBasicAuth()
-
-log.debug("Routes")
-
-
-@api.route('/publickey')
-class PublicKey(Resource):
-    def get(self):
-        public_key_filename = current_app.config["PUBLIC_KEY_FILENAME"]
-        log.debug("PUBLIC_KEY_FILENAME:" + public_key_filename)
-        return send_file(public_key_filename, as_attachment=True)
-
-
-# Create an api parser
-upload_parser = api.parser()
-
-# Add parser for file storage
-upload_parser.add_argument('file', location='files', type=FileStorage, required=True, help='DYNAMO log.gz.enc file')
-
-# Add parser for session id
-upload_parser.add_argument('sessionId', required=True, help="Session unique identifier")
-
-
-@api.route('/upload/<self_id>')
-@api.expect(upload_parser)
-class ParcelUpload(Resource):
-    def post(self, self_id):
-        # Import the process file
-        from app.tasks import process_file_task
-
-        # This is FileStorage instance
-        uploaded_file = request.files.get('file')
-        if uploaded_file is None:
-            return {'result': 'fail', 'error': 'Missing file field'}, 400
-
-        # Context identifiers are used as directory names.  Keep the accepted
-        # Signal K form while rejecting path traversal and control characters.
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", self_id):
-            return {'result': 'fail', 'error': 'Invalid vessel identifier'}, 400
-
-        # Check if the myme is application/octet-stream
-        if uploaded_file.mimetype == 'application/octet-stream':
-
-            # Compose the destination directory
-            destination = os.path.join(current_app.config.get('MEDIA_ROOT'), str(self_id) + "/")
-
-            # Check if the directory exists
-            if not os.path.exists(destination):
-                # Make the directory if needed
-                os.makedirs(destination)
-
-            descriptor, file_path = tempfile.mkstemp(suffix='.log.gz.enc', dir=destination)
-            os.close(descriptor)
-            temp_name = os.path.basename(file_path)
-            uploaded_file.save(file_path)
-
-            # Processing the file is potentially time-consuming, enqueue the process
-            process_file_task.delay(self_id, temp_name)
-
-            return {'result': 'ok'}, 200
+@web.route("/register", methods=["GET", "POST"])
+def register():
+    if not registration_open(): abort(403)
+    if request.method == "POST":
+        username, password = request.form.get("username", "").strip(), request.form.get("password", "")
+        if not username or len(password) < 12 or dao().user(username): flash("Use a unique username and a password of at least 12 characters.", "danger")
         else:
-            return {'result': 'fail', "error": "File mimetype must be application/octet-stream"}, 422
+            user=dao().create_user(username, password); login_user(user); return redirect(url_for("web.index"))
+    return render_template("register.html")
+
+@web.route("/admin/groups", methods=["GET", "POST"])
+@admin_required
+def groups():
+    if request.method == "POST":
+        name=request.form.get("name", "").strip()
+        if name and name not in [group.name for group in dao().groups()]: dao().create_group(name); flash("Group created.", "success")
+    return render_template("groups.html", groups=dao().groups(), registration_open=registration_open())
+
+@web.post("/admin/registration")
+@admin_required
+def registration():
+    dao().set_setting("registration_open", "true" if request.form.get("open") else "false")
+    return redirect(url_for("web.groups"))
+
+@web.post("/api/users")
+@admin_required
+def create_user_api():
+    payload=request.get_json(silent=True) or {}; username, password=payload.get("username", "").strip(), payload.get("password", "")
+    if not username or len(password) < 12 or dao().user(username): return jsonify(error="Username must be unique and password at least 12 characters."), 400
+    user=dao().create_user(username, password); return jsonify(id=user.id, username=user.username, role=user.role.value), 201
+@web.get("/manifest.webmanifest")
+def manifest(): return current_app.send_static_file("manifest.webmanifest")
+@web.get("/service-worker.js")
+def service_worker():
+    response = current_app.send_static_file("service-worker.js"); response.headers["Service-Worker-Allowed"] = "/"; return response
+@web.get("/publickey")
+def public_key(): return send_file(current_app.config["PUBLIC_KEY_FILENAME"], as_attachment=True)
+@web.post("/upload/<self_id>")
+def upload(self_id):
+    uploaded = request.files.get("file")
+    if uploaded is None: return jsonify(result="fail", error="Missing file field"), 400
+    if not IDENTIFIER.fullmatch(self_id): return jsonify(result="fail", error="Invalid vessel identifier"), 400
+    if uploaded.mimetype != "application/octet-stream": return jsonify(result="fail", error="File mimetype must be application/octet-stream"), 422
+    destination = Path(current_app.config["MEDIA_ROOT"]) / self_id; destination.mkdir(parents=True, exist_ok=True)
+    descriptor, path = tempfile.mkstemp(suffix=".log.gz.enc", dir=destination); os.close(descriptor); uploaded.save(path)
+    from app.tasks import process_file_task
+    process_file_task.delay(self_id, Path(path).name)
+    return jsonify(result="ok"), 200

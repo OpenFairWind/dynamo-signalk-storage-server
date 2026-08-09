@@ -1,5 +1,5 @@
 {
-  "CONNECTION_STRING": "postgresql://dynamo:Dynamo2022@127.0.0.1/dynamo",
+  "CONNECTION_STRING": "sqlite:///data/dynamo.db",
   "PRIVATE_KEY_FILENAME": "data/keys/dynamo-signalk-storage-server-private.pem",
   "PUBLIC_KEY_FILENAME":"data/keys/dynamo-signalk-storage-server-public.pem",
   "PUBLIC_KEY_ROOT":"data/keys/public",

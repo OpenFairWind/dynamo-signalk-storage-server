@@ -20,11 +20,17 @@
 - Target the Python versions supported by the Docker image and pinned
   dependencies. Keep `requirements.txt` pinned; explain and test dependency
   changes.
+- For web-interface changes, preserve responsive Bootstrap layouts, PWA
+  manifest/service-worker behaviour, accessible controls, and the OpenLayers
+  integration. Update README and operational documentation whenever the web
+  surface or browser requirements change.
 - Add or update focused tests for every behavioural fix, especially parcel
   decoding, signature verification, upload handling, database persistence, and
   failure/retry paths.
 - Run `python -m unittest discover -s tests -v`, `python -m compileall -q app
-  tests`, and `git diff --check` before handing off a Python change. Run
+  tests`, and `git diff --check` before handing off a Python change. The suite
+  must cover parcel decoding, HTTP validation, authorization, DAO behaviour,
+  and the PWA shell. Run
   `docker compose config` after Compose changes when Docker is available.
 - Preserve user-owned untracked configuration, generated keys, media, local
   Compose overrides, and IDE files unless the user explicitly asks to change

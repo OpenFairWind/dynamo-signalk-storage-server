@@ -1,77 +1,26 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
 <head>
-	<base target="_top">
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-
-	<title>Dynamo - Map</title>
-
-	<link rel="shortcut icon" href="{{ url_for('static', filename='images/ares.png') }}">
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.1/dist/leaflet.css" integrity="sha256-sA+zWATbFveLLNqWO2gtiw3HL/lh1giY/Inf1BJ0z14=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.1/dist/leaflet.js" integrity="sha256-NDI0K41gVbWqfkkaHj15IzU7PtMoelkzyKp8TOaFQ3s=" crossorigin=""></script>
-
-	<style>
-		html, body {
-			height: 100%;
-			margin: 0;
-		}
-	</style>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b172a"><meta name="description" content="DYNAMO Signal K secure telemetry receiver">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="{{ url_for('static', filename='images/ares.png') }}">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/ol@10.8.0/ol.css" rel="stylesheet">
+  <title>DYNAMO | Signal K Storage</title>
+  <style>body{background:#07111f}.hero{background:linear-gradient(135deg,#0d6efd,#0b172a 65%)}#map{height:48vh;min-height:320px}.status-dot{width:.65rem;height:.65rem;border-radius:50%;background:#20c997;display:inline-block}</style>
 </head>
 <body>
-
-<div id="map" style="width: 100%; height: 100%; position:absolute; top:0; left:0;"></div>
-
-<script>
-    let map = L.map('map').setView([40.853294, 14.305573], 8);
-
-	let tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-		maxZoom: 30,
-		attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-	}).addTo(map);
-
-	L.Control.Watermark = L.Control.extend({
-        onAdd: function(map) {
-            let img = L.DomUtil.create('img');
-
-            img.src = 'static/images/ares.png';
-            img.style.width = '128px';
-            img.style.height = '128px';
-            return img;
-        },
-        onRemove: function(map) {
-            // Nothing to do here
-        }
-    });
-
-    L.control.watermark = function(opts) {
-        return new L.Control.Watermark(opts);
-    }
-
-    L.control.watermark({ position: 'bottomleft' }).addTo(map);
-
-    let icon = L.icon({
-        iconUrl:      'static/images/boat.png',
-        iconSize:     [40, 40],
-        popupAnchor:  [0, -20]
-    });
-
-	let layerGroup = L.layerGroup().addTo(map);
-
-    function updatePosition() {
-        layerGroup.clearLayers();
-
-        fetch("/lastPosition").then(response => response.json()).then(data => {
-            for (let i=0; i<data.length; i++) {
-                let marker = L.marker([data[i]["position"]["latitude"], data[i]["position"]["longitude"]], {icon: icon}).addTo(layerGroup);
-                marker.bindPopup(data[i]["info"]["name"]).openPopup();
-            }
-        })
-    }
-
-	updatePosition();
-	setInterval(function() {updatePosition()}, 30000);
-</script>
-</body>
-</html>
+<nav class="navbar navbar-expand-lg navbar-dark bg-body-tertiary border-bottom"><div class="container">
+  <a class="navbar-brand fw-bold" href="/">DYNAMO</a><button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+  <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav ms-auto"><li class="nav-item"><a class="nav-link" href="/publickey">Server key</a></li><li class="nav-item"><a class="nav-link" href="#operations">Operations</a></li></ul></div>
+</div></nav>
+<main>
+ <section class="hero py-5"><div class="container py-lg-4"><div class="row align-items-center g-4"><div class="col-lg-7"><p class="text-info fw-semibold text-uppercase mb-2">Secure vessel telemetry</p><h1 class="display-5 fw-bold">Observe the fleet. Preserve the evidence.</h1><p class="lead text-light-emphasis">DYNAMO receives encrypted Signal K parcels and processes them asynchronously for durable storage.</p><a class="btn btn-primary btn-lg" href="#map-panel">Explore tracking</a></div><div class="col-lg-5"><div class="card bg-dark border-secondary"><div class="card-body"><span class="status-dot me-2"></span><strong>Receiver ready</strong><p class="small text-secondary mb-0 mt-2">Install this application, then configure the companion Signal K Logger with this server URL.</p></div></div></div></div></div></section>
+ <section class="container py-5" id="map-panel"><div class="d-flex justify-content-between align-items-end mb-3"><div><h2 class="h3 mb-1">Tracked vessels</h2><p class="text-secondary mb-0">Live position visualisation is available when a position API is configured.</p></div><button class="btn btn-outline-info btn-sm" id="locate">Locate me</button></div><div class="card border-secondary overflow-hidden"><div id="map" aria-label="Vessel map"></div></div></section>
+ <section class="container pb-5" id="operations"><div class="row g-3"><div class="col-md-4"><article class="card h-100 border-secondary"><div class="card-body"><h2 class="h5">Encrypted parcels</h2><p class="text-secondary mb-0">RSA-wrapped keys and AES encryption protect telemetry before it leaves a vessel.</p></div></article></div><div class="col-md-4"><article class="card h-100 border-secondary"><div class="card-body"><h2 class="h5">Asynchronous storage</h2><p class="text-secondary mb-0">A queue separates upload acknowledgement from cryptographic processing and database writes.</p></div></article></div><div class="col-md-4"><article class="card h-100 border-secondary"><div class="card-body"><h2 class="h5">Recovery first</h2><p class="text-secondary mb-0">Failed parcels remain available for investigation and a safe retry.</p></div></article></div></div></section>
+</main>
+<footer class="border-top py-4 text-center text-secondary small">DYNAMO Signal K Storage Server</footer>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ol@10.8.0/dist/ol.js"></script>
+<script>const map=new ol.Map({target:'map',layers:[new ol.layer.Tile({source:new ol.source.OSM()})],view:new ol.View({center:ol.proj.fromLonLat([14.3,40.85]),zoom:6})});document.querySelector('#locate').onclick=()=>navigator.geolocation?.getCurrentPosition(p=>map.getView().animate({center:ol.proj.fromLonLat([p.coords.longitude,p.coords.latitude]),zoom:11}));if('serviceWorker'in navigator)navigator.serviceWorker.register('/service-worker.js');</script>
+</body></html>
