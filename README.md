@@ -76,6 +76,16 @@ choose a username and password. Administrators configure SMTP and OAuth
 identity-provider properties at `/admin/settings`. The authenticated `POST /api/users` endpoint remains administrator
 only, allowing controlled provisioning when public registration is closed.
 
+## OAuth and vessel onboarding
+
+Administrators configure OAuth2/OIDC providers as JSON in Settings. Each
+provider needs a unique `name`, client credentials, and either an OIDC
+`server_metadata_url` or OAuth authorization/token/userinfo endpoints. Users
+sign in at `/oauth/<provider-name>`. At `/vessels`, users register the Signal K
+UUID and PEM public key shown by the companion logger plugin, then download
+this service's public key from the linked endpoint and paste it into the
+plugin's server-key configuration field.
+
 ## Verification
 
 After installing the pinned dependencies in an isolated environment, run:

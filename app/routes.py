@@ -3,6 +3,7 @@ import re
 import tempfile
 import smtplib
 import secrets
+import json
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -10,6 +11,7 @@ from flask import Blueprint, abort, current_app, flash, jsonify, redirect, rende
 from flask_login import current_user, login_required, login_user, logout_user
 from .models import Group, RegistrationInvite, Role, Setting, User
 from .dao import Dao
+from .models import Vessel
 
 web = Blueprint("web", __name__)
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
@@ -41,6 +43,45 @@ def login():
 @web.post("/logout")
 @login_required
 def logout(): logout_user(); return redirect(url_for("web.index"))
+
+def provider_config(name):
+    try: providers=json.loads(dao().setting("oauth_providers", "[]").value)
+    except ValueError: providers=[]
+    return next((item for item in providers if item.get("name") == name), None)
+
+@web.get("/oauth/<provider>")
+def oauth_login(provider):
+    config=provider_config(provider)
+    if not config: abort(404)
+    client=current_app.extensions["oauth"].register(name=provider, client_id=config["client_id"], client_secret=config["client_secret"], server_metadata_url=config.get("server_metadata_url"), authorize_url=config.get("authorize_url"), access_token_url=config.get("access_token_url"), client_kwargs={"scope":config.get("scope", "openid email profile")})
+    return client.authorize_redirect(url_for("web.oauth_callback", provider=provider, _external=True))
+
+@web.get("/oauth/<provider>/callback")
+def oauth_callback(provider):
+    config=provider_config(provider)
+    if not config: abort(404)
+    client=current_app.extensions["oauth"].create_client(provider); token=client.authorize_access_token(); profile=client.parse_id_token(token) if config.get("server_metadata_url") else client.get(config.get("userinfo_url")).json()
+    subject=str(profile.get("sub") or profile.get("id")); username=f"{provider}:{subject}"
+    user=dao().user(username)
+    if not user: user=dao().create_user(username, secrets.token_urlsafe(32))
+    login_user(user); return redirect(url_for("web.index"))
+
+@web.route("/vessels", methods=["GET", "POST"])
+@login_required
+def vessels():
+    if request.method == "POST":
+        uuid=request.form.get("signalk_uuid", "").strip(); public_key=request.form.get("public_key", "").strip()
+        if not IDENTIFIER.fullmatch(uuid) or "BEGIN" not in public_key: flash("Provide the Signal K UUID and its PEM public key.", "danger")
+        elif database().query(Vessel).filter_by(signalk_uuid=uuid).first(): flash("This vessel UUID is already registered.", "danger")
+        else: dao().create_vessel(current_user.id, uuid, public_key); flash("Vessel added. Paste this server public key into the companion plugin configuration.", "success")
+    return render_template("vessels.html", vessels=dao().vessels(current_user.id), server_key_url=url_for("web.public_key", _external=True))
+
+@web.post("/vessels/<int:vessel_id>/delete")
+@login_required
+def delete_vessel(vessel_id):
+    vessel=dao().vessel(vessel_id)
+    if not vessel or vessel.owner_id != current_user.id: abort(403)
+    dao().delete_vessel(vessel); return redirect(url_for("web.vessels"))
 
 @web.route("/register", methods=["GET", "POST"])
 def register():

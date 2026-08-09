@@ -1,6 +1,6 @@
 from enum import Enum
 from flask_login import UserMixin
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, Integer, String, Table, Column, ForeignKey
+from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, Integer, String, Table, Column, ForeignKey, Text
 from datetime import datetime, timezone
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -17,6 +17,7 @@ class User(UserMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[Role] = mapped_column(SqlEnum(Role), default=Role.USER, nullable=False)
     groups: Mapped[list["Group"]] = relationship(secondary=group_members, back_populates="members")
+    vessels: Mapped[list["Vessel"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     def set_password(self, password): self.password_hash = generate_password_hash(password)
     def check_password(self, password): return check_password_hash(self.password_hash, password)
     @property
@@ -38,3 +39,11 @@ class RegistrationInvite(Base):
     token: Mapped[str] = mapped_column(String(128), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+class Vessel(Base):
+    __tablename__ = "vessels"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signalk_uuid: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    owner: Mapped[User] = relationship(back_populates="vessels")

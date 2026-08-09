@@ -6,11 +6,13 @@ from Crypto.PublicKey import RSA
 from flask import Flask
 from flask_cors import CORS
 from flask_login import LoginManager
+from authlib.integrations.flask_client import OAuth
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from .models import Base, Role, Setting, User
 
 login_manager = LoginManager()
+oauth = OAuth()
 login_manager.login_view = "web.login"
 
 def _ensure_keys(config):
@@ -35,6 +37,8 @@ def create_app(test_config=None):
     session = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
     app.extensions["db"] = session
     login_manager.init_app(app)
+    oauth.init_app(app)
+    app.extensions["oauth"] = oauth
     @login_manager.user_loader
     def load_user(user_id): return session.get(User, int(user_id))
     if not session.query(User).filter_by(username="admin").first():

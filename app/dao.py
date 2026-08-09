@@ -1,5 +1,5 @@
 """Database-agnostic SQLAlchemy data access objects."""
-from .models import Group, RegistrationInvite, Setting, User
+from .models import Group, RegistrationInvite, Setting, User, Vessel
 
 class Dao:
     def __init__(self, session): self.session = session
@@ -19,3 +19,8 @@ class Dao:
         if existing: self.session.delete(existing); self.session.flush()
         self.session.add(invite); self.session.commit()
     def consume_invite(self, invite): self.session.delete(invite); self.session.commit()
+    def vessels(self, owner_id): return self.session.query(Vessel).filter_by(owner_id=owner_id).order_by(Vessel.signalk_uuid).all()
+    def vessel(self, vessel_id): return self.session.get(Vessel, vessel_id)
+    def create_vessel(self, owner_id, signalk_uuid, public_key):
+        vessel=Vessel(owner_id=owner_id, signalk_uuid=signalk_uuid, public_key=public_key); self.session.add(vessel); self.session.commit(); return vessel
+    def delete_vessel(self, vessel): self.session.delete(vessel); self.session.commit()
