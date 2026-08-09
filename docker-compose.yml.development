@@ -1,20 +1,29 @@
-version: '1.0'
+name: dynamo-signalk-storage-development
 
 services:
   postgis:
-    image: mdillon/postgis
+    image: postgis/postgis:16-3.4
     restart: unless-stopped
     environment:
       POSTGRES_USER: dynamo
-      POSTGRES_PASSWORD: Dynamo2022
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Dynamo2022}
       POSTGRES_DB: dynamo
     ports:
-      - 5432:5432
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dynamo -d dynamo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
-    image: bitnami/redis:latest
-    environment:
-      - ALLOW_EMPTY_PASSWORD=yes
-    restart: always
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

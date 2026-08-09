@@ -1,0 +1,16 @@
+{
+  "CONNECTION_STRING": "postgresql://dynamo:change-this-postgres-password@postgis/dynamo",
+  "PRIVATE_KEY_FILENAME": "data/keys/dynamo-signalk-storage-server-private.pem",
+  "PUBLIC_KEY_FILENAME": "data/keys/dynamo-signalk-storage-server-public.pem",
+  "PUBLIC_KEY_ROOT": "data/keys/public",
+
+  "MEDIA_ROOT": "data/media",
+  "SCRATCH_ROOT": "data/scratch",
+  "TRASH_ROOT": "data/trash",
+
+  "CELERY": {
+    "broker_url": "redis://:change-this-redis-password@redis:6379/0",
+    "result_backend": "redis://:change-this-redis-password@redis:6379/0",
+    "task_ignore_result": false
+  }
+}

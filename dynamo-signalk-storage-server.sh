@@ -1,10 +1,8 @@
-#!/bin/bash
+#!/bin/sh
+set -eu
 
-. venv/bin/activate
+# State is normally a mounted volume. Create the complete hierarchy on first
+# start without ever creating or copying a configuration or a private key.
+mkdir -p data/keys/public data/media data/scratch data/trash
 
-export LC_ALL=C.UTF-8
-export LANG=C.UTF-8
-export FLASK_APP=dynamo-signalk-storage-server.py
-export FLASK_ENV=development
-
-flask run -h 0.0.0.0 -p 13387 # --no-reload
+exec "$@"

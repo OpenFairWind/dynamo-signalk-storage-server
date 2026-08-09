@@ -1,0 +1,69 @@
+name: dynamo-signalk-storage
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  web:
+    build: .
+    image: dynamo-signalk-storage-server:local
+    restart: unless-stopped
+    env_file: ${DYNAMO_ENV_FILE:-.env}
+    command: ["flask", "--app", "run:flask_app", "run", "--host", "0.0.0.0", "--port", "13387"]
+    ports:
+      - "127.0.0.1:${DYNAMO_PORT:-13387}:13387"
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - dynamo-state:/app/data
+    depends_on:
+      postgis: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [backend]
+
+  worker:
+    image: dynamo-signalk-storage-server:local
+    restart: unless-stopped
+    env_file: ${DYNAMO_ENV_FILE:-.env}
+    command: ["celery", "--app", "run.celery_app", "worker", "--loglevel=INFO"]
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - dynamo-state:/app/data
+    depends_on:
+      postgis: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [backend]
+
+networks:
+  backend:
+    internal: true
+
+volumes:
+  dynamo-state:
+  postgis-data:
+  redis-data:

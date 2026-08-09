@@ -83,6 +83,7 @@ celerybeat-schedule
 
 # Environments
 .env
+.env.local
 .venv
 env/
 venv/
@@ -102,3 +103,14 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Local deployment configuration and generated DYNAMO state
+config.json
+.idea/
+data/keys/*.pem
+data/media/*
+!data/media/README.md
+data/scratch/*
+!data/scratch/README.md
+data/trash/*
+!data/trash/README.md

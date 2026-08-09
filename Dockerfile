@@ -1,15 +1,17 @@
-FROM python:3.8-slim-buster
+FROM python:3.11-slim
 
-WORKDIR /dynamo-signalk-storage-server
+WORKDIR /app
 
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-COPY data data
-COPY config.json.sample config.json
-COPY app app
-COPY run.py run.py
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
 
-COPY dynamo-signalk-storage-server.sh dynamo-signalk-storage-server.sh
+COPY app ./app
+COPY run.py dynamo-signalk-storage-server.sh ./
+RUN chmod 0755 dynamo-signalk-storage-server.sh
 
 ENTRYPOINT ["./dynamo-signalk-storage-server.sh"]
+CMD ["flask", "--app", "run:flask_app", "run", "--host", "0.0.0.0", "--port", "13387"]

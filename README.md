@@ -1,92 +1,92 @@
-# DYNAMO Signal K storage server
+# DYNAMO Signal K Storage Server
 
-A server for DYNAMO data storage, management and processing.
+DYNAMO Signal K Storage Server is a shore-side ingestion service for encrypted
+Signal K telemetry. It receives signed and encrypted parcels from the
+[DYNAMO Signal K Logger plugin](https://github.com/OpenFairWind/dynamo-signalk-logger-plugin),
+verifies the vessel signature, decrypts and decompresses the payload in a
+Celery worker, and persists the resulting deltas in PostgreSQL/PostGIS.
 
-A reference client implementation as Signal K Server plugin is available here:
-https://github.com/OpenFairWind/dynamo-signalk-plugin
+## What it provides
 
-## Vessel to shore data movement through the Internet of Floating Things: A microservice platform at the edge
+- HTTP ingestion at `POST /upload/vessels.<selfId>` and server-key discovery at
+  `GET /publickey`.
+- RSA-OAEP key wrapping, AES-256-CBC parcel encryption, and RSA-SHA256 vessel
+  signature verification compatible with the companion plugin.
+- Redis-backed asynchronous processing that keeps unsuccessful parcels for
+  retry instead of discarding them.
+- Dynamic Signal K path tables, including PostGIS point storage for navigation
+  positions.
+- A Compose deployment with independently restartable web, worker, PostGIS,
+  and Redis services plus persistent state volumes.
 
-The rise of the Internet of Things has generated high expectations about the improvement in people's lifestyles.
-In the last decade, we saw several examples of instrumented cities where different types of data were gathered,
-processed, and made available to inspire the next generation of scientists and engineers.
+## Documentation
 
-In this framework, sensors and actuators became leading actors of technologically pervasive urban environments.
-However, in coastal areas, marine data crowdsourcing is difficult to apply due to the challenging operational
-conditions, extremely unstable network connectivity, and security issues in data movement.
-To fill this gap, we present a novel version of our DYNAMO transfer protocol (DTP), a platform-independent data mover
-framework where data collected on board of vessels are stored locally and then moved from the edge to the cloud when the
-operating conditions are favorable.
+Read these documents before deploying:
 
-We evaluate the performance of DTP in a controlled environment with a private cloud by measuring the time it takes for
-the clouds ide to process and store a fixed amount of data while varying the number of microservice instances.
+- [Architecture](docs/architecture.md) — components, parcel lifecycle, storage
+  schema, and delivery/recovery semantics.
+- [Getting started](docs/getting_started.md) — local setup, key registration,
+  commands, validation, and troubleshooting.
+- [Containerization](docs/containerization.md) — the supported Compose
+  topology, persistence, networking, and operations.
+- [Security and privacy](docs/security_and_privacy.md) — cryptography, key
+  management, network exposure, residual risks, and data governance.
+- [Agent guidance](AGENTS.md) — repository invariants, tests, and mandatory
+  documentation-update rules for contributors and coding agents.
 
-We show that the time decreases exponentially when the number of microservice instances goes from 1 to 16, and it
-remains constant above that number.
+## Quick start with Compose
 
-### How to cite:
+The default `docker-compose.yml` is a complete local deployment. It exposes
+only the receiver on loopback; place a TLS reverse proxy in front of it for
+remote access.
 
-* Di Luccio, Diana, Sokol Kosta, Aniello Castiglione, Antonio Maratea, and Raffaele Montella.
-"Vessel to shore data movement through the internet of floating things: A microservice platform at the edge."
-Concurrency and Computation: Practice and Experience 33, no. 4 (2021): e5988.
-https://doi.org/10.1002/cpe.5988
-* Montella, Raffaele, Diana Di Luccio, Sokol Kosta, Giulio Giunta, and Ian Foster. "Performance, resilience, and
-security in moving data from the fog to the cloud: the DYNAMO transfer framework approach." In International
-Conference on Internet and Distributed Computing Systems, pp. 197-208. Springer, Cham, 2018.
-https://doi.org/10.1007/978-3-030-02738-4_17
-* Montella, Raffaele, Mario Ruggieri, and Sokol Kosta. "A fast, secure, reliable, and resilient data transfer framework
-for pervasive IoT applications." In IEEE INFOCOM 2018-IEEE Conference on Computer Communications Workshops (INFOCOM
-WKSHPS), pp. 710-715. IEEE, 2018.
-https://doi.org/10.1109/INFCOMW.2018.8406884
-* Montella, Raffaele, Sokol Kosta, and Ian Foster. "DYNAMO: Distributed leisure yacht-carried sensor-network for
-atmosphere and marine data crowdsourcing applications." In 2018 IEEE International Conference on Cloud Engineering
-(IC2E), pp. 333-339. IEEE, 2018.
-https://doi.org/10.1109/IC2E.2018.00064
+```sh
+cp .env.sample .env
+cp config.json.container.sample config.json
+```
 
-## Building and run
+Set strong, distinct `POSTGRES_PASSWORD` and `REDIS_PASSWORD` values in
+`.env`, then replace the corresponding placeholder values in `config.json`.
+The values must match exactly. Register at least one vessel public key after
+starting the stack (see the getting-started guide).
 
+```sh
+docker compose up --build -d
+docker compose ps
+docker compose logs -f worker
+```
 
-```git clone https://github.com/OpenFairWind/dynamo-signalk-storage-server.git```
+Do not commit `.env`, `config.json`, or generated data under `data/`. They
+contain credentials, private key material, or sensitive telemetry.
 
-```cd dynamo-signalk-storage-server```
+For host-based Python development, use `docker-compose.yml.development` to run
+only PostGIS and Redis, then follow the local workflow in
+[getting started](docs/getting_started.md).
 
-```python3 -m venv venv```
+## Verification
 
-```. venv/bin/activate```
+After installing the pinned dependencies in an isolated environment, run:
 
-```cp config.json.sample config.json```
+```sh
+python -m unittest discover -s tests -v
+python -m compileall -q app tests
+git diff --check
+docker compose config
+```
 
-```cp docker-compose.yml.development docker-compose```
+## Research context
 
-1st shell:
+The project supports DYNAMO research on secure vessel-to-shore data movement:
 
-```cd dynamo-signalk-storage-server```
+- Di Luccio, D., Kosta, S., Castiglione, A., Maratea, A., and Montella, R.
+  “Vessel to shore data movement through the internet of floating things: A
+  microservice platform at the edge.” *Concurrency and Computation: Practice
+  and Experience* 33(4), e5988 (2021). https://doi.org/10.1002/cpe.5988
+- Montella, R., Di Luccio, D., Kosta, S., Giunta, G., and Foster, I.
+  “Performance, resilience, and security in moving data from the fog to the
+  cloud: the DYNAMO transfer framework approach.” ICDCS 2018.
+  https://doi.org/10.1007/978-3-030-02738-4_17
 
-```docker-compose up```
+## License
 
-2st shell (be sure the services are up and running):
-
-```cd dynamo-signalk-storage-server```
-
-```. venv/bin/activate```
-
-```celery --app run worker --loglevel INFO```
-
-3st shell (be sure the worker is up and running):
-
-```cd dynamo-signalk-storage-server```
-
-```. venv/bin/activate```
-
-```flask --app app run -h 0.0.0.0 -p 13387 --debug```
-
-
-## How to create keys manually
-
-Private key
-
-```openssl genrsa -out dynamo-signalk-storage-server-private.pem 2048```
-
-Public key
-
-```openssl rsa -in dynamo-signalk-storage-server-private.pem -outform PEM -pubout -out dynamo-signalk-storage-server-public.pem```
+Apache License 2.0. See [LICENSE](LICENSE).
